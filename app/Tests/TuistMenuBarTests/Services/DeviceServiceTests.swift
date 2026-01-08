@@ -1,13 +1,14 @@
 import Foundation
 import Mockable
+import TuistAppStorage
 import TuistAutomation
 import TuistCore
 import TuistServer
 import TuistSupport
-import TuistSupportTesting
+import TuistTesting
 import XCTest
 
-@testable import TuistApp
+@testable import TuistMenuBar
 
 final class DeviceServiceTests: TuistUnitTestCase {
     private var subject: DeviceService!
@@ -23,7 +24,8 @@ final class DeviceServiceTests: TuistUnitTestCase {
 
     private let previewURL =
         URL(
-            string: "tuist:open-preview?server_url=https://tuist.dev&preview_id=01912892-3778-7297-8ca9-d66ac7ee2a53&full_handle=tuist/ios_app_with_frameworks"
+            string:
+            "tuist:open-preview?server_url=https://tuist.dev&preview_id=01912892-3778-7297-8ca9-d66ac7ee2a53&full_handle=tuist/ios_app_with_frameworks"
         )!
 
     private let iPhone15: SimulatorDeviceAndRuntime = .test(
@@ -475,23 +477,6 @@ final class DeviceServiceTests: TuistUnitTestCase {
                 )
             )
 
-        let appSimulatorPath = unarchivedPath.appending(component: "iphonesimulator-App.app")
-        try fileHandler.touch(appSimulatorPath)
-
-        given(appBundleLoader)
-            .load(.any)
-            .willReturn(
-                .test(
-                    path: appSimulatorPath,
-                    infoPlist: .test(
-                        bundleId: "tuist.app",
-                        supportedPlatforms: [
-                            .simulator(.iOS),
-                        ]
-                    )
-                )
-            )
-
         // When
         try await subject.launchPreviewDeeplink(with: previewURL)
 
@@ -531,7 +516,13 @@ final class DeviceServiceTests: TuistUnitTestCase {
                 fullHandle: .value("tuist/ios_app_with_frameworks"),
                 serverURL: .value(Constants.URLs.production)
             )
-            .willReturn(.test())
+            .willReturn(
+                .test(
+                    appBuilds: [
+                        .test(supportedPlatforms: [.device(.iOS)]),
+                    ]
+                )
+            )
 
         let downloadedArchive = try temporaryPath().appending(component: "archive")
 
@@ -558,23 +549,6 @@ final class DeviceServiceTests: TuistUnitTestCase {
                         bundleId: "tuist.app",
                         supportedPlatforms: [
                             .device(.iOS),
-                        ]
-                    )
-                )
-            )
-
-        let appSimulatorPath = unarchivedPath.appending(component: "iphonesimulator-App.app")
-        try fileHandler.touch(appSimulatorPath)
-
-        given(appBundleLoader)
-            .load(.any)
-            .willReturn(
-                .test(
-                    path: appSimulatorPath,
-                    infoPlist: .test(
-                        bundleId: "tuist.app",
-                        supportedPlatforms: [
-                            .simulator(.iOS),
                         ]
                     )
                 )
@@ -659,7 +633,15 @@ final class DeviceServiceTests: TuistUnitTestCase {
 
         given(getPreviewService)
             .getPreview(.any, fullHandle: .any, serverURL: .any)
-            .willReturn(.test())
+            .willReturn(
+                .test(
+                    appBuilds: [
+                        .test(
+                            supportedPlatforms: [.device(.visionOS)]
+                        ),
+                    ]
+                )
+            )
 
         let downloadedArchive = try temporaryPath().appending(component: "archive")
 
@@ -687,11 +669,20 @@ final class DeviceServiceTests: TuistUnitTestCase {
                     )
                 )
             )
+        given(simulatorController)
+            .booted(device: .any, forced: .any)
+            .willProduce { device, _ in device }
+        given(simulatorController)
+            .launchApp(bundleId: .any, device: .any, arguments: .any)
+            .willReturn()
+        given(simulatorController)
+            .installApp(at: .any, device: .any)
+            .willReturn()
 
         // When / Then
         await XCTAssertThrowsSpecific(
             try await subject.launchPreviewDeeplink(with: previewURL),
-            SimulatorsViewModelError.appNotFound(.simulator(iPhone15), [.visionOS])
+            SimulatorsViewModelError.appNotFound(.simulator(iPhone15), [.device(.visionOS)])
         )
     }
 }

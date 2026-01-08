@@ -16,9 +16,9 @@ struct AppPreview: Identifiable, Codable, Equatable {
         static func test(
             fullHandle: String = "tuist/tuist",
             displayName: String = "App",
-            bundleIdentifier: String = "com.tuist.app",
+            bundleIdentifier: String = "dev.tuist.app",
             iconURL: URL =
-                URL(string: "https://cloud.tuist.io/tuist/tuist/previews/preview-id/icon.png")!
+                URL(string: "https://tuist.dev/tuist/tuist/previews/preview-id/icon.png")!
             // swiftlint:disable:this force_try
         ) -> Self {
             .init(

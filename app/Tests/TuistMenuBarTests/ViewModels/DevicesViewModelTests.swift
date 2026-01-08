@@ -1,11 +1,12 @@
 import Foundation
 import Mockable
+import TuistAppStorage
 import TuistAutomation
 import TuistCore
-import TuistSupportTesting
+import TuistTesting
 import XCTest
 
-@testable import TuistApp
+@testable import TuistMenuBar
 
 final class DevicesViewModelTests: TuistUnitTestCase {
     private var subject: DevicesViewModel!

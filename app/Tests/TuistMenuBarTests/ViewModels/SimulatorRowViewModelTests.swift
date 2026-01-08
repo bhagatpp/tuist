@@ -3,9 +3,9 @@ import Foundation
 import Mockable
 import TuistCore
 import TuistSupport
-import TuistSupportTesting
+import TuistTesting
 
-@testable import TuistApp
+@testable import TuistMenuBar
 
 final class SimulatorRowViewModelTests: TuistUnitTestCase {
     private var subject: SimulatorRowViewModel!

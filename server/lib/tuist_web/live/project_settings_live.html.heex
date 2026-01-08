@@ -1,0 +1,391 @@
+<div id="project-settings">
+  <h1 data-part="title">
+    {@selected_project.name}
+  </h1>
+
+  <.tab_menu_horizontal>
+    <.tab_menu_horizontal_item
+      label={dgettext("dashboard_projects", "General")}
+      selected={true}
+      patch={~p"/#{@selected_account.name}/#{@selected_project.name}/settings"}
+    />
+    <.tab_menu_horizontal_item
+      label={dgettext("dashboard_projects", "QA")}
+      selected={false}
+      patch={~p"/#{@selected_account.name}/#{@selected_project.name}/settings/qa"}
+    />
+  </.tab_menu_horizontal>
+  <h2 data-part="subtitle">
+    {dgettext("dashboard_projects", "General")}
+  </h2>
+  <.card_section data-part="preview-access-card-section">
+    <div data-part="header">
+      <span data-part="title">
+        {dgettext("dashboard_projects", "Preview access")}
+      </span>
+      <span data-part="subtitle">
+        {dgettext("dashboard_projects", "Set your previews to be public or private by default.")}
+      </span>
+    </div>
+    <div data-part="content">
+      <label data-part="dropdown-label">
+        {dgettext("dashboard_projects", "General access")}
+      </label>
+      <.dropdown
+        id="preview-access-dropdown"
+        label={
+          if @selected_project.default_previews_visibility == :private do
+            dgettext("dashboard_projects", "Only people with access")
+          else
+            dgettext("dashboard_projects", "Anyone with the link")
+          end
+        }
+      >
+        <:icon :if={@selected_project.default_previews_visibility == :private}>
+          <.icon name="lock" />
+        </:icon>
+        <:icon :if={@selected_project.default_previews_visibility == :public}>
+          <.icon name="world" />
+        </:icon>
+        <.dropdown_item
+          value="private"
+          label={dgettext("dashboard_projects", "Only people with access")}
+          phx-click="update_preview_access"
+          phx-value-visibility="private"
+          data-selected={@selected_project.default_previews_visibility == :private}
+        >
+          <:left_icon><.icon name="lock" /></:left_icon>
+          <:right_icon :if={@selected_project.default_previews_visibility == :private}>
+            <.icon name="check" />
+          </:right_icon>
+        </.dropdown_item>
+        <.dropdown_item
+          value="public"
+          label={dgettext("dashboard_projects", "Anyone with the link")}
+          phx-click="update_preview_access"
+          phx-value-visibility="public"
+          data-selected={@selected_project.default_previews_visibility == :public}
+        >
+          <:left_icon><.icon name="world" /></:left_icon>
+          <:right_icon :if={@selected_project.default_previews_visibility == :public}>
+            <.icon name="check" />
+          </:right_icon>
+        </.dropdown_item>
+      </.dropdown>
+    </div>
+  </.card_section>
+  <.card_section :if={@slack_installation} data-part="slack-reports-card-section">
+    <div data-part="header">
+      <span data-part="title">
+        {dgettext("dashboard_projects", "Slack reports")}
+      </span>
+      <span data-part="subtitle">
+        {dgettext("dashboard_projects", "Configure your Slack reports")}
+      </span>
+    </div>
+    <div data-part="content">
+      <div data-part="content-column">
+        <.tag
+          :if={
+            @selected_project.slack_report_frequency == :daily &&
+              @selected_project.slack_channel_id
+          }
+          label={format_slack_reports_tag(assigns)}
+        />
+        <div :if={@selected_project.slack_channel_id} data-part="channel-action">
+          <.tag label={@selected_project.slack_channel_name} />
+          <.button
+            label={dgettext("dashboard_projects", "Change")}
+            variant="secondary"
+            size="medium"
+            href={
+              TuistWeb.SlackOAuthController.channel_selection_url(
+                @selected_project.id,
+                @selected_account.id
+              )
+            }
+          />
+        </div>
+        <.button
+          :if={is_nil(@selected_project.slack_channel_id)}
+          label={dgettext("dashboard_projects", "Select channel")}
+          variant="secondary"
+          size="medium"
+          href={
+            TuistWeb.SlackOAuthController.channel_selection_url(
+              @selected_project.id,
+              @selected_account.id
+            )
+          }
+        />
+        <div data-part="actions">
+          <.modal
+            id="slack-schedule-modal"
+            title={dgettext("dashboard_projects", "Configure Slack reports")}
+            header_size="large"
+            on_dismiss="close_slack_schedule_modal"
+          >
+            <:trigger :let={attrs}>
+              <.button
+                label={dgettext("dashboard_projects", "Configure")}
+                variant="secondary"
+                size="medium"
+                {attrs}
+              />
+            </:trigger>
+            <.line_divider />
+            <div data-part="schedule-form">
+              <div data-part="schedule-row">
+                <label data-part="schedule-label">
+                  {dgettext("dashboard_projects", "Frequency")}
+                </label>
+                <.dropdown
+                  id="schedule-frequency-dropdown"
+                  label={
+                    case @schedule_form_frequency do
+                      :never -> dgettext("dashboard_projects", "Never")
+                      _ -> dgettext("dashboard_projects", "Daily")
+                    end
+                  }
+                >
+                  <.dropdown_item
+                    value="never"
+                    label={dgettext("dashboard_projects", "Never")}
+                    phx-click="update_schedule_form_frequency"
+                    phx-value-frequency="never"
+                    data-selected={@schedule_form_frequency == :never}
+                  >
+                    <:right_icon :if={@schedule_form_frequency == :never}>
+                      <.icon name="check" />
+                    </:right_icon>
+                  </.dropdown_item>
+                  <.dropdown_item
+                    value="daily"
+                    label={dgettext("dashboard_projects", "Daily")}
+                    phx-click="update_schedule_form_frequency"
+                    phx-value-frequency="daily"
+                    data-selected={@schedule_form_frequency != :never}
+                  >
+                    <:right_icon :if={@schedule_form_frequency != :never}>
+                      <.icon name="check" />
+                    </:right_icon>
+                  </.dropdown_item>
+                </.dropdown>
+              </div>
+              <div :if={@schedule_form_frequency != :never} data-part="schedule-row">
+                <label data-part="schedule-label">
+                  {dgettext("dashboard_projects", "Days")}
+                </label>
+                <.dropdown
+                  id="schedule-days-dropdown"
+                  label={format_selected_days(@schedule_form_days)}
+                  close_on_select={false}
+                >
+                  <.dropdown_item
+                    :for={day <- 1..7}
+                    value={Integer.to_string(day)}
+                    label={Timex.day_name(day)}
+                    checked={Enum.member?(@schedule_form_days, day)}
+                    phx-click="toggle_schedule_form_day"
+                    phx-value-day={day}
+                  />
+                </.dropdown>
+              </div>
+              <div :if={@schedule_form_frequency != :never} data-part="schedule-row">
+                <label data-part="schedule-label">
+                  {dgettext("dashboard_projects", "Time")}
+                </label>
+                <.dropdown
+                  id="schedule-time-dropdown"
+                  label={format_hour(@schedule_form_hour)}
+                >
+                  <.dropdown_item
+                    :for={hour <- 0..23}
+                    value={Integer.to_string(hour)}
+                    label={format_hour(hour)}
+                    phx-click="update_schedule_form_hour"
+                    phx-value-hour={hour}
+                    data-selected={@schedule_form_hour == hour}
+                  >
+                    <:right_icon :if={@schedule_form_hour == hour}>
+                      <.icon name="check" />
+                    </:right_icon>
+                  </.dropdown_item>
+                </.dropdown>
+              </div>
+            </div>
+            <.line_divider />
+            <:footer>
+              <.modal_footer>
+                <:action>
+                  <.button
+                    type="button"
+                    label={dgettext("dashboard_projects", "Cancel")}
+                    variant="secondary"
+                    phx-click="close_slack_schedule_modal"
+                  />
+                </:action>
+                <:action>
+                  <.button
+                    type="button"
+                    label={dgettext("dashboard_projects", "Save")}
+                    variant="primary"
+                    phx-click="save_slack_schedule"
+                  />
+                </:action>
+              </.modal_footer>
+            </:footer>
+          </.modal>
+          <.button
+            :if={
+              @selected_project.slack_report_frequency == :daily &&
+                @selected_project.slack_channel_id
+            }
+            label={dgettext("dashboard_projects", "Send test report")}
+            variant="secondary"
+            size="medium"
+            phx-click="send_test_slack_report"
+          />
+        </div>
+      </div>
+    </div>
+  </.card_section>
+  <.card_section data-part="rename-card-section">
+    <div data-part="header">
+      <span data-part="title">
+        {dgettext("dashboard_projects", "Rename project")}
+      </span>
+      <span data-part="subtitle">
+        {dgettext("dashboard_projects", "Renaming your project can have unintended side effects.")}
+      </span>
+    </div>
+    <div data-part="content">
+      <.form
+        data-part="form"
+        for={@rename_project_form}
+        id="rename-project"
+        phx-submit="rename_project"
+      >
+        <.modal
+          id="rename-project-modal"
+          title={dgettext("dashboard_projects", "Rename your project?")}
+          header_size="large"
+          on_dismiss="close_rename_project_modal"
+        >
+          <:trigger :let={attrs}>
+            <.button
+              label={dgettext("dashboard_projects", "Rename project")}
+              variant="destructive"
+              size="medium"
+              {attrs}
+            />
+          </:trigger>
+          <.line_divider />
+          <.alert
+            status="error"
+            type="secondary"
+            size="small"
+            title={dgettext("dashboard_projects", "Renaming can have unexpected consequences")}
+          />
+          <.text_input
+            field={@rename_project_form[:name]}
+            type="basic"
+            placeholder={dgettext("dashboard_projects", "Project name")}
+          />
+          <.line_divider />
+          <:footer>
+            <.modal_footer>
+              <:action>
+                <.button
+                  type="reset"
+                  label={dgettext("dashboard_projects", "Cancel")}
+                  variant="secondary"
+                  phx-click="close_rename_project_modal"
+                />
+              </:action>
+              <:action>
+                <.button
+                  type="submit"
+                  label={dgettext("dashboard_projects", "Rename")}
+                  variant="destructive"
+                />
+              </:action>
+            </.modal_footer>
+          </:footer>
+        </.modal>
+      </.form>
+    </div>
+  </.card_section>
+  <.card_section data-part="delete-project-card-section">
+    <div data-part="header">
+      <span data-part="title">
+        {dgettext("dashboard_projects", "Delete project")}
+      </span>
+      <span data-part="subtitle">
+        {dgettext("dashboard_projects", "This action cannot be undone.")}
+      </span>
+    </div>
+    <div data-part="content">
+      <.form
+        data-part="form"
+        for={@delete_project_form}
+        id="delete-project-form"
+        phx-submit="delete_project"
+      >
+        <.modal
+          id="delete-project-modal"
+          title={dgettext("dashboard_projects", "Are you sure you want to delete this?")}
+          header_size="large"
+          on_dismiss="close_delete_project_modal"
+        >
+          <:trigger :let={attrs}>
+            <.button
+              label={dgettext("dashboard_projects", "Delete project")}
+              variant="destructive"
+              size="medium"
+              {attrs}
+            />
+          </:trigger>
+          <.line_divider />
+          <.alert
+            status="warning"
+            type="secondary"
+            size="small"
+            title={
+              dgettext(
+                "dashboard_projects",
+                "Deleting the project will permanently remove all of its data"
+              )
+            }
+          />
+          <.text_input
+            label={dgettext("dashboard_projects", "Enter this project's name to confirm")}
+            field={@delete_project_form[:name]}
+            type="basic"
+            placeholder={dgettext("dashboard_projects", "Project name")}
+          />
+          <.line_divider />
+          <:footer>
+            <.modal_footer>
+              <:action>
+                <.button
+                  type="reset"
+                  label={dgettext("dashboard_projects", "Cancel")}
+                  variant="secondary"
+                  phx-click="close_delete_project_modal"
+                />
+              </:action>
+              <:action>
+                <.button
+                  type="submit"
+                  label={dgettext("dashboard_projects", "Delete")}
+                  variant="destructive"
+                />
+              </:action>
+            </.modal_footer>
+          </:footer>
+        </.modal>
+      </.form>
+    </div>
+  </.card_section>
+</div>

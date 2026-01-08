@@ -1,34 +1,33 @@
 import Foundation
 import Mockable
 import Testing
-import class TuistApp.MockServerURLServicing
+import TuistAppStorage
+import TuistAuthentication
 import TuistServer
-import TuistSupportTesting
+import TuistTesting
 
-@testable import TuistApp
+@testable import TuistMenuBar
 
 @Suite struct AppPreviewsViewModelTests {
     private let subject: AppPreviewsViewModel
-    private let appCredentialsService: MockAppCredentialsServicing
     private let deviceService: MockDeviceServicing
     private let appStorage: MockAppStoring
     private let listPreviewsService: MockListPreviewsServicing
     private let listProjectsService: MockListProjectsServicing
-    private let serverURLService: MockServerURLServicing
+    private let serverEnvironmentService: MockServerEnvironmentServicing
 
     init() {
-        appCredentialsService = MockAppCredentialsServicing()
+        appStorage = MockAppStoring()
         deviceService = MockDeviceServicing()
         listPreviewsService = MockListPreviewsServicing()
         listProjectsService = MockListProjectsServicing()
-        serverURLService = MockServerURLServicing()
-        appStorage = MockAppStoring()
+        serverEnvironmentService = MockServerEnvironmentServicing()
+
         subject = AppPreviewsViewModel(
-            appCredentialsService: appCredentialsService,
             deviceService: deviceService,
             listProjectsService: listProjectsService,
             listPreviewsService: listPreviewsService,
-            serverURLService: serverURLService,
+            serverEnvironmentService: serverEnvironmentService,
             appStorage: appStorage
         )
 
@@ -42,8 +41,8 @@ import TuistSupportTesting
                 )
             )
 
-        given(serverURLService)
-            .serverURL()
+        given(serverEnvironmentService)
+            .url()
             .willReturn(.test())
     }
 
@@ -64,7 +63,7 @@ import TuistSupportTesting
         #expect(subject.appPreviews == [.test()])
     }
 
-    @Test func on_appear_updates_app_previews_when_logged_in() async throws {
+    @Test func on_appear_updates_app_previews() async throws {
         // Given
         given(listProjectsService)
             .listProjects(serverURL: .any)
@@ -88,23 +87,21 @@ import TuistSupportTesting
                 serverURL: .any
             )
             .willReturn(
-                [
-                    .test(
-                        displayName: "App_B"
-                    ),
-                    .test(
-                        displayName: "App_A"
-                    ),
-                ]
+                .test(
+                    previews: [
+                        .test(
+                            displayName: "App_B"
+                        ),
+                        .test(
+                            displayName: "App_A"
+                        ),
+                    ]
+                )
             )
 
         given(appStorage)
             .set(.any as Parameter<AppPreviewsKey.Type>, value: .any)
             .willReturn()
-
-        given(appCredentialsService)
-            .authenticationState
-            .willReturn(.loggedIn(accountHandle: "tuistrocks"))
 
         // When
         try await subject.onAppear()
@@ -124,26 +121,6 @@ import TuistSupportTesting
         verify(appStorage)
             .set(.any as Parameter<AppPreviewsKey.Type>, value: .any)
             .called(1)
-    }
-
-    @Test func update_app_previews_is_skipped_when_logged_out() async throws {
-        // Given
-        given(appStorage)
-            .set(.any as Parameter<AppPreviewsKey.Type>, value: .any)
-            .willReturn()
-
-        given(appCredentialsService)
-            .authenticationState
-            .willReturn(.loggedOut)
-
-        // When
-        try await subject.onAppear()
-
-        // Then
-        verify(listProjectsService)
-            .listProjects(serverURL: .any)
-            .called(0)
-        #expect(subject.appPreviews == [])
     }
 
     @Test func launch_preview_when_no_preview_found() async throws {
@@ -170,7 +147,7 @@ import TuistSupportTesting
                 fullHandle: .any,
                 serverURL: .any
             )
-            .willReturn([])
+            .willReturn(.test(previews: []))
 
         // When / Then
         await #expect(throws: AppPreviewsModelError.previewNotFound(appPreview.displayName)) {
@@ -203,9 +180,11 @@ import TuistSupportTesting
                 serverURL: .any
             )
             .willReturn(
-                [
-                    .test(id: "preview-id"),
-                ]
+                .test(
+                    previews: [
+                        .test(id: "preview-id"),
+                    ]
+                )
             )
 
         given(deviceService)

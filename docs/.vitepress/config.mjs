@@ -5,20 +5,22 @@ import {
   guidesSidebar,
   contributorsSidebar,
   referencesSidebar,
-  serverSidebar,
   navBar,
 } from "./bars.mjs";
-import { cliSidebar } from "./data/cli";
+import { cliSidebar } from "./data/cli.js";
 import { localizedString } from "./i18n.mjs";
+import llmstxtPlugin from "vitepress-plugin-llmstxt";
+import postcssRtlcss from "postcss-rtlcss";
+import { validateAdmonitions } from "./validate-admonitions.mjs";
+import { checkLocalePages } from "./check-locale-pages.mjs";
 
 async function themeConfig(locale) {
   const sidebar = {};
   sidebar[`/${locale}/contributors`] = contributorsSidebar(locale);
-  sidebar[`/${locale}/guides/`] = guidesSidebar(locale);
-  sidebar[`/${locale}/server/`] = serverSidebar(locale);
+  sidebar[`/${locale}/guides/`] = await guidesSidebar(locale);
   sidebar[`/${locale}/cli/`] = await cliSidebar(locale);
   sidebar[`/${locale}/references/`] = await referencesSidebar(locale);
-  sidebar[`/${locale}/`] = guidesSidebar(locale);
+  sidebar[`/${locale}/`] = await guidesSidebar(locale);
   return {
     nav: navBar(locale),
     sidebar,
@@ -135,13 +137,14 @@ function getSearchOptionsForLocale(locale) {
   };
 }
 
-const searchOptionsLocales = {
-  en: getSearchOptionsForLocale("en"),
-  ko: getSearchOptionsForLocale("ko"),
-  ja: getSearchOptionsForLocale("ja"),
-  ru: getSearchOptionsForLocale("ru"),
-  es: getSearchOptionsForLocale("es"),
-};
+const allLocales = ["en", "ko", "ja", "ru", "es", "pt", "ar", "zh_Hans", "pl", "yue_Hant"];
+const enabledLocales = process.env.DOCS_LOCALES
+  ? process.env.DOCS_LOCALES.split(",")
+  : allLocales;
+
+const searchOptionsLocales = Object.fromEntries(
+  enabledLocales.map((locale) => [locale, getSearchOptionsForLocale(locale)])
+);
 
 export default defineConfig({
   title: "Tuist",
@@ -149,38 +152,62 @@ export default defineConfig({
   description: "Scale your Xcode app development",
   srcDir: "docs",
   lastUpdated: false,
-  locales: {
-    en: {
-      label: "English",
-      lang: "en",
-      themeConfig: await themeConfig("en"),
+  ignoreDeadLinks: [
+    // Ignore localhost URLs in self-hosting documentation
+    /^http:\/\/localhost/,
+    // Ignore .env.example download link (static file served from public/)
+    /\/server\/self-host\/\.env\.example$/,
+  ],
+  experimental: {
+    metaChunk: true,
+  },
+  vite: {
+    plugins: [llmstxtPlugin()],
+    css: {
+      postcss: {
+        plugins: [
+          postcssRtlcss({
+            ltrPrefix: ':where([dir="ltr"])',
+            rtlPrefix: ':where([dir="rtl"])',
+          }),
+        ],
+      },
     },
-    ko: {
-      label: "한국어 (Korean)",
-      lang: "ko",
-      themeConfig: await themeConfig("ko"),
-    },
-    ja: {
-      label: "日本語 (Japanese)",
-      lang: "ja",
-      themeConfig: await themeConfig("ja"),
-    },
-    ru: {
-      label: "Русский (Russian)",
-      lang: "ru",
-      themeConfig: await themeConfig("ru"),
-    },
-    es: {
-      label: "Castellano (Spanish)",
-      lang: "es",
-      themeConfig: await themeConfig("es"),
-    },
-    pt: {
-      label: "Português (Portuguese)",
-      lang: "pt",
-      themeConfig: await themeConfig("pt"),
+    build: {
+      // Disable sourcemaps to speed up builds
+      sourcemap: false,
+      // Use esbuild for minification (default, but explicit)
+      minify: 'esbuild',
+      // Target modern browsers for faster builds
+      target: 'esnext',
     },
   },
+  mpa: false,
+  locales: Object.fromEntries(
+    await Promise.all(
+      enabledLocales.map(async (locale) => {
+        const localeConfig = {
+          en: { label: "English", lang: "en" },
+          ko: { label: "한국어 (Korean)", lang: "ko" },
+          ja: { label: "日本語 (Japanese)", lang: "ja" },
+          ru: { label: "Русский (Russian)", lang: "ru" },
+          es: { label: "Castellano (Spanish)", lang: "es" },
+          pt: { label: "Português (Portuguese)", lang: "pt" },
+          ar: { label: "العربية (Arabic)", lang: "ar", dir: "rtl" },
+          zh_Hans: { label: "中文 (Chinese)", lang: "zh_Hans" },
+          pl: { label: "Polski (Polish)", lang: "pl" },
+          yue_Hant: { label: "廣東話 (Cantonese)", lang: "yue_Hant" },
+        }[locale];
+        return [
+          locale,
+          {
+            ...localeConfig,
+            themeConfig: await themeConfig(locale),
+          },
+        ];
+      })
+    )
+  ),
   cleanUrls: true,
   head: [
     [
@@ -245,6 +272,17 @@ export default defineConfig({
     hostname: "https://docs.tuist.io",
   },
   async buildEnd({ outDir }) {
+    // Run validations in parallel
+    await Promise.all([
+      validateAdmonitions(outDir),
+      checkLocalePages(outDir)
+    ]);
+
+    // Copy functions directory to dist
+    const functionsSource = path.join(path.dirname(outDir), "functions");
+    const functionsDest = path.join(outDir, "functions");
+    await fs.cp(functionsSource, functionsDest, { recursive: true });
+
     const redirectsPath = path.join(outDir, "_redirects");
     const redirects = `
 /documentation/tuist/installation /guide/introduction/installation 301
@@ -326,10 +364,28 @@ export default defineConfig({
 /:locale/guides/develop/build/registry /:locale/guides/develop/registry 301
 /:locale/guides/develop/test/selective-testing /:locale/guides/develop/selective-testing 301
 /:locale/guides/develop/inspect/implicit-dependencies /:locale/guides/develop/projects/inspect/implicit-dependencies 301
-/:locale/guides/develop/automate/continuous-integration /:locale/guides/automate/continuous-integration 301
-/:locale/guides/develop/automate/workflows /:locale/guides/automate/workflows 301
+/:locale/guides/develop/automate/continuous-integration /:locale/guides/environments/continuous-integration 301
+/:locale/guides/develop/automate/workflows /:locale/guides/environments/automate/continuous-integration 301
+/:locale/guides/automate/workflows /:locale/guides/environments/automate/continuous-integration 301
+/:locale/guides/automate/* /:locale/guides/environments/:splat 301
+/:locale/guides/develop/* /:locale/guides/features/:splat 301
 /documentation/tuist/* / 301
 /:locale/guides/develop/build/registry /:locale/guides/develop/registry 301
+/:locale/guides/develop/selective-testing/xcodebuild /:locale/guides/develop/selective-testing/xcode-project 301
+/:locale/guides/features/mcp /:locale/guides/features/agentic-coding/mcp 301
+/:locale/guides/features/agentic-building/mcp /:locale/guides/features/agentic-coding/mcp 301
+/:locale/guides/environments/continuous-integration /:locale/guides/integrations/continuous-integration 301
+/:locale/guides/environments/automate/continuous-integration /:locale/guides/integrations/continuous-integration 301
+/:locale/server/introduction/accounts-and-projects /:locale/guides/server/accounts-and-projects 301
+/:locale/server/introduction/authentication /:locale/guides/server/authentication 301
+/:locale/server/introduction/integrations /:locale/guides/integrations/gitforge/github 301
+/:locale/server/on-premise/install /:locale/guides/server/self-host/install 301
+/:locale/server/on-premise/metrics /:locale/guides/server/self-host/telemetry 301
+/:locale/guides/server/install /:locale/guides/server/self-host/install 301
+/:locale/guides/server/metrics /:locale/guides/server/self-host/telemetry 301
+/:locale/server /:locale/guides/server/accounts-and-projects 301
+/:locale/references/examples /:locale/guides/examples/generated-projects 301
+/:locale/references/examples/* /:locale/guides/examples/generated-projects/:splat 301
 ${await fs.readFile(path.join(import.meta.dirname, "locale-redirects.txt"), {
   encoding: "utf-8",
 })}

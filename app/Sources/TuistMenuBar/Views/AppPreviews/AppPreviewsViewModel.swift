@@ -1,4 +1,6 @@
 import Foundation
+import TuistAppStorage
+import TuistAuthentication
 import TuistServer
 import TuistSupport
 
@@ -20,7 +22,8 @@ enum AppPreviewsModelError: FatalError, Equatable {
     var description: String {
         switch self {
         case let .previewNotFound(displayName):
-            return "The latest preview for \(displayName) was not found. Has any preview been published?"
+            return
+                "The latest preview for \(displayName) was not found. Has any preview been published?"
         }
     }
 }
@@ -35,24 +38,21 @@ final class AppPreviewsViewModel: Sendable {
 
     private let listProjectsService: ListProjectsServicing
     private let listPreviewsService: ListPreviewsServicing
-    private let serverURLService: ServerURLServicing
-    private let appCredentialsService: any AppCredentialsServicing
+    private let serverEnvironmentService: ServerEnvironmentServicing
     private let deviceService: any DeviceServicing
     private let appStorage: AppStoring
 
     init(
-        appCredentialsService: any AppCredentialsServicing,
         deviceService: any DeviceServicing,
         listProjectsService: ListProjectsServicing = ListProjectsService(),
         listPreviewsService: ListPreviewsServicing = ListPreviewsService(),
-        serverURLService: ServerURLServicing = ServerURLService(),
+        serverEnvironmentService: ServerEnvironmentServicing = ServerEnvironmentService(),
         appStorage: AppStoring = AppStorage()
     ) {
-        self.appCredentialsService = appCredentialsService
         self.deviceService = deviceService
         self.listProjectsService = listProjectsService
         self.listPreviewsService = listPreviewsService
-        self.serverURLService = serverURLService
+        self.serverEnvironmentService = serverEnvironmentService
         self.appStorage = appStorage
     }
 
@@ -64,59 +64,54 @@ final class AppPreviewsViewModel: Sendable {
         try await updatePreviews()
     }
 
-    func onAuthenticationStateChanged() async throws {
-        try await updatePreviews()
-    }
-
     private func updatePreviews() async throws {
-        switch appCredentialsService.authenticationState {
-        case .loggedIn:
-            let serverURL = serverURLService.serverURL()
-            let projects = try await listProjectsService.listProjects(serverURL: serverURL)
-            let listPreviewsService = listPreviewsService
-            appPreviews = try await projects.concurrentMap { project in
-                try await listPreviewsService.listPreviews(
-                    displayName: nil,
-                    specifier: "latest",
-                    supportedPlatforms: [],
-                    page: nil,
-                    pageSize: nil,
-                    distinctField: .bundleIdentifier,
+        let serverURL = serverEnvironmentService.url()
+        let projects = try await listProjectsService.listProjects(serverURL: serverURL)
+        let listPreviewsService = listPreviewsService
+        appPreviews = try await projects.concurrentMap { project in
+            try await listPreviewsService.listPreviews(
+                displayName: nil,
+                specifier: "latest",
+                supportedPlatforms: [],
+                page: nil,
+                pageSize: nil,
+                distinctField: .bundleIdentifier,
+                fullHandle: project.fullName,
+                serverURL: serverURL
+            )
+            .previews
+            .compactMap { preview in
+                guard let bundleIdentifier = preview.bundleIdentifier else { return nil }
+                return AppPreview(
                     fullHandle: project.fullName,
-                    serverURL: serverURL
+                    displayName: preview.displayName ?? project.fullName,
+                    bundleIdentifier: bundleIdentifier,
+                    iconURL: preview.iconURL
                 )
-                .compactMap { preview in
-                    guard let bundleIdentifier = preview.bundleIdentifier else { return nil }
-                    return AppPreview(
-                        fullHandle: project.fullName,
-                        displayName: preview.displayName ?? project.fullName,
-                        bundleIdentifier: bundleIdentifier,
-                        iconURL: preview.iconURL
-                    )
-                }
             }
-            .flatMap { $0 }
-            .sorted(by: { $0.displayName < $1.displayName })
-        case .loggedOut:
-            appPreviews = []
         }
+        .flatMap { $0 }
+        .sorted(by: { $0.displayName < $1.displayName })
     }
 
     func launchAppPreview(_ appPreview: AppPreview) async throws {
-        let serverURL = serverURLService.serverURL()
+        let serverURL = serverEnvironmentService.url()
 
         let previews = try await listPreviewsService.listPreviews(
             displayName: nil,
             specifier: "latest",
-            supportedPlatforms: [deviceService.selectedDevice?.destinationType].compactMap { $0 },
+            supportedPlatforms: [try deviceService.selectedDevice?.destinationType()].compactMap { $0 },
             page: nil,
             pageSize: 1,
             distinctField: nil,
             fullHandle: appPreview.fullHandle,
             serverURL: serverURL
         )
+        .previews
 
-        guard let preview = previews.first else { throw AppPreviewsModelError.previewNotFound(appPreview.displayName) }
+        guard let preview = previews.first else {
+            throw AppPreviewsModelError.previewNotFound(appPreview.displayName)
+        }
 
         try await deviceService.launchPreview(
             with: preview.id,
